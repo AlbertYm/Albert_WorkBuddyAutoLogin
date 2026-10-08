@@ -11,7 +11,7 @@ function envelope(r) {
   if (r.status === 404) throw new Failure('PATH_NOT_FOUND', 404);
   if (r.status < 200 || r.status >= 300) throw new Failure('HTTP_REJECTED', r.status);
   if (!obj(r.json) || typeof r.json.code !== 'number') throw new Failure('INVALID_ENVELOPE');
-  if (r.json.code !== 0) throw new Failure(r.json.code === 404 ? 'PATH_NOT_FOUND' : 'BUSINESS_REJECTED', r.json.code);
+  if (r.json.code !== 0) throw new Failure([401,403].includes(r.json.code) ? 'AUTH_REJECTED' : r.json.code === 404 ? 'PATH_NOT_FOUND' : 'BUSINESS_REJECTED', r.json.code);
   if (!obj(r.json.data) && !Array.isArray(r.json.data)) throw new Failure('MISSING_DATA');
   return r.json.data;
 }
@@ -94,14 +94,15 @@ async function travel(transport, execute) {
   return {...report, result:pendingError ? 'depart_confirmed_after_error':'departed'};
 }
 async function completed(transport, execute, allowed) {
-  if (!Array.isArray(allowed) || allowed.some(x => typeof x !== 'string' || !/^[A-Za-z0-9_-]{1,100}$/.test(x))) throw new Failure('INVALID_TASK_ALLOWLIST');
+  if (!Array.isArray(allowed) || allowed.some(x => typeof x !== 'string' || (x !== '*' && !/^[A-Za-z0-9_-]{1,100}$/.test(x)))) throw new Failure('INVALID_TASK_ALLOWLIST');
   if (!allowed.length) return {result:'disabled', claimed:0};
   const list = async () => {
     const data = await call(transport, P.tasks, 'GET', {}, true);
     if (!Array.isArray(data.tasks)) throw new Failure('TASK_SCHEMA_CHANGED');
     return data.tasks;
   };
-  const tasks = (await list()).filter(x => obj(x) && allowed.includes(x.task_code) && x.accept_status === 'completed');
+  const tasks = (await list()).filter(x => obj(x) && typeof x.task_code === 'string' && /^[A-Za-z0-9_-]{1,100}$/.test(x.task_code) &&
+    (allowed.includes('*') || allowed.includes(x.task_code)) && x.accept_status === 'completed');
   if (!execute) return {result:'checked', pending:tasks.length};
   let claimed = 0, gained = 0, knownCredits = true;
   for (const task of tasks) {

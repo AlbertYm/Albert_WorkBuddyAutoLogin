@@ -14,14 +14,12 @@ jobs:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
         with:
           node-version: '20'
-      - name: Mock tests only; no account requests
-        run: node --test
-      - name: Syntax checks
-        run: |
-          node --check main.js
-          node --check ipc.js
-          node --check cloud.js
-          python3 -m py_compile sync-auth.py vendor/signin.py
+      - run: node --test
+      - run: |
+          node --check buddy_ci.mjs
+          node --check auth-state.js
+          node --check gateway.js
+          python3 -m py_compile sync-auth.py renew_export.py vendor/signin.py

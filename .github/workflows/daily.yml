@@ -1,38 +1,77 @@
-name: WorkBuddy unified daily
+name: buddy-daily
 on:
+  schedule:
+    # Asia/Shanghai: 09:30 daily, plus 00:17/04:17/08:17/12:17/16:17/20:17.
+    - cron: '30 1 * * *'
+    - cron: '17 */4 * * *'
   workflow_dispatch:
     inputs:
       action:
-        description: Read-only check or execute earned rewards
+        description: Execute eligible rewards or only inspect business state
         type: choice
-        options: [check, execute]
-        default: check
-  schedule:
-    # Asia/Shanghai 09:17 and 21:43, expressed in UTC.
-    - cron: '17 1 * * *'
-    - cron: '43 13 * * *'
+        options: [execute, check]
+        default: execute
+      force_refresh:
+        description: Force one credential renewal for verification
+        type: boolean
+        default: false
 permissions:
   contents: read
+  actions: read
 concurrency:
-  group: workbuddy-single-account
+  group: buddy-daily
   cancel-in-progress: false
 jobs:
-  daily:
-    # Set repository variable WB_ENABLED=true only after manual acceptance.
-    if: vars.WB_REPOSITORY_APPROVED == github.repository && (github.event_name == 'workflow_dispatch' || vars.WB_ENABLED == 'true')
-    # Linux server in the cloud, independent of the user's Windows PC.
-    # GitHub-hosted runner terms limit unrelated recurring work; use your own cloud runner.
-    runs-on: [self-hosted, Linux, workbuddy-cloud]
-    timeout-minutes: 8
+  run:
+    # The private deployment is active; the public source mirror needs explicit opt-in.
+    if: github.repository == 'AlbertYm/workbuddy-auto' || vars.WB_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
         with:
           persist-credentials: false
-      - name: Validate code with offline mocks
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: '20'
+      - name: Offline regression tests
         run: node --test
-      - name: Run shared task engine
+      - name: Select newest encrypted credential checkpoint
+        id: select
         env:
-          WORKBUDDY_AUTH: ${{ secrets.WORKBUDDY_AUTH }}
-          WB_SECRET_WRITE_TOKEN: ${{ secrets.WB_SECRET_WRITE_TOKEN }}
-          RUN_ACTION: ${{ github.event_name == 'schedule' && 'execute' || inputs.action }}
-        run: node main.js --cloud --$RUN_ACTION
+          GITHUB_TOKEN: ${{ github.token }}
+          WB_REFRESH_TOKEN: ${{ secrets.WB_REFRESH_TOKEN }}
+        run: node buddy_ci.mjs select
+      - name: Restore credential checkpoint from previous run
+        if: steps.select.outputs.found == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: ${{ steps.select.outputs.artifact_name }}
+          path: runtime
+          github-token: ${{ github.token }}
+          run-id: ${{ steps.select.outputs.run_id }}
+      - name: Renew credentials and validate authentication
+        id: prepare
+        env:
+          WB_ACCESS_TOKEN: ${{ secrets.WB_ACCESS_TOKEN }}
+          WB_REFRESH_TOKEN: ${{ secrets.WB_REFRESH_TOKEN }}
+          WB_ARTIFACT_FOUND: ${{ steps.select.outputs.found }}
+          WB_FORCE_REFRESH: ${{ inputs.force_refresh == true && 'true' || 'false' }}
+        run: node buddy_ci.mjs prepare
+      - name: Persist encrypted checkpoint before business writes
+        if: always() && steps.prepare.outputs.state_written == 'true'
+        id: persist
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: ${{ steps.select.outputs.artifact_name }}
+          path: runtime/auth-state.json
+          retention-days: 90
+          if-no-files-found: error
+          overwrite: true
+      - name: Sign in, reconcile travel and claim earned rewards
+        if: success() && steps.persist.outcome == 'success'
+        env:
+          WB_REFRESH_TOKEN: ${{ secrets.WB_REFRESH_TOKEN }}
+          WB_PERSISTED_ARTIFACT_ID: ${{ steps.persist.outputs.artifact-id }}
+          WB_ACTION: ${{ github.event_name == 'schedule' && 'execute' || inputs.action }}
+        run: node buddy_ci.mjs tasks

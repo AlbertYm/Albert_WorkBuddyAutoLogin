@@ -2,5 +2,5 @@
   "signin": true,
   "travel": true,
   "completed": true,
-  "claimTaskCodes": []
+  "claimTaskCodes": ["*"]
 }

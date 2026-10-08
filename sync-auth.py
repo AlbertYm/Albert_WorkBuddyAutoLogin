@@ -38,7 +38,7 @@ def main():
         raise SyncError("INVALID_REPOSITORY")
     if not args.write:
         print(json.dumps({"ok": True, "mode": "preview", "repository": args.repo,
-                          "secret": "WORKBUDDY_AUTH", "credentials_read": False,
+                          "secrets": ["WB_ACCESS_TOKEN", "WB_REFRESH_TOKEN"], "credentials_read": False,
                           "next": "明确同意读取本机会话并上传到此仓库后添加 --write；公开仓库另需 --allow-public"}, ensure_ascii=False))
         return
     # Check the exact recipient before accessing any local credential.
@@ -75,12 +75,12 @@ def main():
     auth = {"accessToken": resolved["auth"]["accessToken"], "refreshToken": refresh,
             "uid": resolved["account"]["uid"], "domain": "www.workbuddy.cn",
             "enterpriseId": resolved["account"].get("enterpriseId") or ""}
-    payload = json.dumps(auth, ensure_ascii=True).encode("ascii")
-    if len(payload) > 45000:
+    if max(len(auth["accessToken"]), len(auth["refreshToken"])) > 45000:
         raise SyncError("SECRET_TOO_LARGE")
-    gh(["secret", "set", "WORKBUDDY_AUTH", "--repo", args.repo], payload)
+    gh(["secret", "set", "WB_ACCESS_TOKEN", "--repo", args.repo], auth["accessToken"].encode("ascii"))
+    gh(["secret", "set", "WB_REFRESH_TOKEN", "--repo", args.repo], auth["refreshToken"].encode("ascii"))
     print(json.dumps({"ok": True, "result": "SECRET_SAVED", "repository": args.repo,
-                      "secret": "WORKBUDDY_AUTH", "live_auth_verified": False}, ensure_ascii=False))
+                      "secrets": ["WB_ACCESS_TOKEN", "WB_REFRESH_TOKEN"], "live_auth_verified": False}, ensure_ascii=False))
 
 
 if __name__ == "__main__":

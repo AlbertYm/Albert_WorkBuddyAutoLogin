@@ -1,7 +1,6 @@
 'use strict';
 const test=require('node:test'), assert=require('node:assert/strict');
 const {Failure,envelope,sign,travel,completed,run}=require('../engine');
-const cloud=require('../cloud');
 const reply=data=>({status:200,json:{code:0,data}});
 function sequence(entries) {
   const calls=[];
@@ -58,42 +57,12 @@ test('business failure makes report fail; raw message and tokens are absent',asy
   const report=await run(t,{execute:true,travel:false,completed:false});
   assert.equal(report.ok,false);assert.equal(report.actions.signin.reason,'BUSINESS_REJECTED');assert.ok(!JSON.stringify(report).includes('SECRET'));
 });
-const jwt=exp=>`header.${Buffer.from(JSON.stringify({exp})).toString('base64url')}.sig`;
-const auth={uid:'test-user',domain:'www.workbuddy.cn',accessToken:jwt(101),refreshToken:'test-rt'};
-const env={GITHUB_REPOSITORY:'test/repo',WB_SECRET_WRITE_TOKEN:'test-write'};
-test('credentials reject untrusted host and encrypted JSON values',()=> {
-  assert.throws(()=>cloud.validate({...auth,domain:'attacker.example'}),/INVALID_AUTH/);
-  assert.throws(()=>cloud.validate({...auth,accessToken:{$wbEncrypted:1}}),/INVALID_AUTH/);
+test('wildcard only claims completed tasks with valid path codes',async()=> {
+  const t=sequence([{tasks:[{task_code:'earned',accept_status:'completed'},{task_code:'pending',accept_status:'accepted'},{task_code:'../invalid',accept_status:'completed'}]},
+    {credit:2},{tasks:[{task_code:'earned',accept_status:'claimed'}]}]);
+  assert.equal((await completed(t,true,['*'])).claimed,1);
+  assert.equal(t.calls.filter(x=>x.method==='POST').length,1);
 });
-test('expired access-only token fails',async()=> {
-  await assert.rejects(cloud.prepare({...auth,refreshToken:''},{execute:true,now:200}),/ACCESS_TOKEN_EXPIRED/);
-});
-test('check does not refresh or write secrets',async()=> {
-  let touched=false;await cloud.prepare(auth,{execute:false,now:100,http:()=>{touched=true;},persist:()=>{touched=true;}});assert.equal(touched,false);
-});
-test('missing secret writer stops BEFORE consuming refresh token',async()=> {
-  let touched=false;
-  await assert.rejects(cloud.prepare(auth,{execute:true,now:100,env:{},http:()=>{touched=true;}}),/SECRET_WRITER_REQUIRED/);assert.equal(touched,false);
-});
-test('rotated AT and RT persist together before returning transport auth',async()=> {
-  let stored;
-  const prepared=await cloud.prepare(auth,{execute:true,now:100,env,http:async()=>reply({accessToken:jwt(200000),refreshToken:'new-rt'}),persist:async value=>{stored=value;}});
-  assert.equal(stored.refreshToken,'new-rt');assert.equal(stored.accessToken,prepared.auth.accessToken);assert.equal(prepared.info.refresh,'saved');
-});
-test('secret write failure aborts; never continue with old/new unsaved auth',async()=> {
-  await assert.rejects(cloud.prepare(auth,{execute:true,now:100,env,http:async()=>reply({accessToken:jwt(200000),refreshToken:'new-rt'}),persist:async()=>{throw new Failure('SECRET_PERSIST_FAILED');}}),/SECRET_PERSIST_FAILED/);
-});
-test('missing rotated RT fails explicitly',async()=> {
-  await assert.rejects(cloud.prepare(auth,{execute:true,now:100,env,http:async()=>reply({accessToken:jwt(200000)}),persist:()=>{throw Error('must not persist');}}),/REFRESH_SCHEMA_CHANGED/);
-});
-test('https redirect is not followed',async()=> {
-  const https=require('https'),{EventEmitter}=require('events');const original=https.request;let requests=0;
-  https.request=(options,callback)=> {
-    requests++;assert.equal(options.rejectUnauthorized,true);assert.equal(options.hostname,'www.workbuddy.cn');
-    const req=new EventEmitter();req.setTimeout=()=>{};req.write=()=>{};req.end=()=> {
-      const res=new EventEmitter();res.statusCode=302;res.headers={location:'https://attacker.example'};callback(res);res.emit('end');
-    };return req;
-  };
-  try {const result=await cloud.request('www.workbuddy.cn','GET','/test',{},{});assert.equal(result.status,302);assert.equal(requests,1);assert.throws(()=>envelope(result),/HTTP_REJECTED/);}
-  finally {https.request=original;}
+test('business-envelope 401 is identified as an auth failure',()=> {
+  assert.throws(()=>envelope({status:200,json:{code:401,data:{}}}),/AUTH_REJECTED/);
 });

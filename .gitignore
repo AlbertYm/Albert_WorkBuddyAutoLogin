@@ -7,3 +7,4 @@ __pycache__/
 !vendor/auth-provenance.json
 endpoint.json
 .env
+tests/tmp-*/

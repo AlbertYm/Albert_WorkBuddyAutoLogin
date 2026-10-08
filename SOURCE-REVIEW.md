@@ -1,35 +1,26 @@
-# 整合依据与修正点
+# 合并依据
 
-审阅日期：2026-10-08。公开仓库以已下载的固定提交为依据，原本机自动化仅作只读审阅。
+2026-10-08 合并两套用户仓库的运行流程。每日任务统一使用 GitHub 托管运行器 `ubuntu-latest`。
 
-| 来源 | 本次用途 | 版本依据 |
+| 来源 | 保留或整合的内容 | 审阅提交 |
 |---|---|---|
-| [tslshuli/workbuddy-checkin-public](https://github.com/tslshuli/workbuddy-checkin-public) | 签到接口、插件 RT 刷新接口、Actions 报告思路 | 本地审阅快照提交前缀 `c05a581d0170` |
-| [L0NE-6/WorkBuddy-Daily](https://github.com/L0NE-6/WorkBuddy-Daily/tree/4823609a5957c569021e7c532958bda73bf00b0f) | 已完成成长任务查询 / 领取、旅行状态别名 | `4823609a5957c569021e7c532958bda73bf00b0f` |
-| 用户的 `buddy_daily.js` 与同目录 `memory.md` | 本机 IPC 协议、实测的签到 / 旅行路径、`idle/traveling/completed` 状态 | 原 JS SHA-256：`27182282D04F639CBB6D1FF9DBFFDDC940B7A817EC12C51CEB5F9B8D56A5E6AE` |
-| [公众号文章](https://mp.weixin.qq.com/s/VBaoD7a8HWjjbDeersVeUQ) | 加密字段改动、原生运行时兼容、失败可见、凭据维护 | 文章显示发布日期 2026-09-28 |
-| [88lin/workbuddy-auto-signin](https://github.com/88lin/workbuddy-auto-signin/tree/cb2bf1f02db8900922dc0f06090cdb7334d45ff5) | 仅复用本机凭据格式解析和原生助手；未调用其签到 / 成长任务函数 | `cb2bf1f02db8900922dc0f06090cdb7334d45ff5`；MIT 许可证随附 |
+| `AlbertYm/workbuddy-auto` | 已在 GitHub 实测的 `copilot.tencent.com` 业务网关、`www.workbuddy.cn` 刷新域、AT / RT Secrets 名称、每日与旅行轮询入口 | `e68d061734946c0abf70cc59a320aeed158df4ad` |
+| `AlbertYm/Albert_WorkBuddyAutoLogin` | 签到和旅行终态确认、固定错误类别、非幂等写入超时后的对账、已完成任务领奖、离线测试、本机 IPC 备用入口 | `c262bd1d1e3485a2bf2dc0afb9fb3100847c5e51` |
+| `tslshuli/workbuddy-checkin-public` | 签到与插件刷新接口依据 | 审阅快照 `c05a581d0170` |
+| `L0NE-6/WorkBuddy-Daily` | 成长任务查询 / 领取、旅行状态别名 | `4823609a5957c569021e7c532958bda73bf00b0f` |
+| 用户原本机 `buddy_daily.js` | 本机 IPC 协议和已实测的旅行接口 | 原文件 SHA-256 `27182282D04F639CBB6D1FF9DBFFDDC940B7A817EC12C51CEB5F9B8D56A5E6AE`，未修改 |
+| `88lin/workbuddy-auto-signin` | 首次初始化用的加密登录态适配函数，未调用其自动任务函数 | `cb2bf1f02db8900922dc0f06090cdb7334d45ff5`，MIT 许可证随附 |
 
-用户原自动化包含 `buddy_daily.js` 和同目录 `memory.md`。本交付没有覆盖原脚本、改写执行记忆或变更原任务安排；原机目录不随公开源码发布。
+新增的核心机制：以现有原始 RT Secret 派生仓库绑定的状态加密密钥，最新 AT / RT 保存在加密 GitHub Artifact，每次运行先恢复、需要时续期，再完成持久化，然后执行业务。无需额外 PAT、自己的云服务器或日常本机导出。
 
-## 本次确实修正的风险
+私有部署使用已有 Secrets；公开仓库仅保存通用代码。两个仓库合并前均保存原提交备份。没有复制实际 Secret 值、用户本机路径、登录文件或原始账户日志到源码。
 
-1. 用户脚本 `unwrap` 未检查 HTTP 状态；本版要求 HTTP 成功、业务 code 成功及有效 data，401 不再误判成功。
-2. 用户脚本领取失败写在 REPORT 后仍可能退出 0；本版任一启用任务失败使进程退出 1。
-3. 用户脚本缺少积分数据时默认 +100；本版只有实际数字才记录积分，没有数据用 null。
-4. 用户脚本派出虽称不重试，但请求超时后仍可能换另一路径再次写入；本版仅明确 404 才允许换路径，写入超时后查询终态。
-5. 用户脚本 completed 领奖成功分支可能绕过 daily_limit；本版领取后重新查状态和次数上限。
-6. 公共签到脚本取得新 RT 后未自动持久化；本版将 AT / RT 同步保存到单个 Secret，保存失败停止执行。跨系统中断窗口仍无法消除。
-7. WorkBuddy-Daily 的环境旧 RT 可能覆盖已保存的新 RT，且其工作流把 token 文件提交到 Git；本版不将登录信息写进 Git。
-8. WorkBuddy-Daily 使用 `verify=False`；本版保留 TLS 校验，不跟随重定向，不允许任意目标域。
-9. WorkBuddy-Daily 的接取 / 领奖部分不完全受任务过滤约束；本版的成长任务仅在明确白名单中领取已完成项。
-10. 用户原脚本 DEBUG 和原始业务报错可能包含非预期字段；本版不输出原始响应、鉴权帧、token 前缀或后端字符串消息，仅固定错误类别和数字状态。
+原 `workbuddy-auto` 的局限：缺少 `REPO_PAT` 时无法保存新 RT；两项 Secret 分开写入；保存发生在业务之后且失败不导致任务失败；HTTP 成功与业务成功检查不完整；部分失败可能仍退出 0。本合并版使用无 PAT 的加密状态机制并保留失败退出及终态验证。
 
-## 本版未声称实现的能力
+GitHub 官方 Artifact Actions 固定提交：
 
-- 永久登录、保证每日准点、保证每次拿到固定积分、适配任何未来客户端版本。
-- 自动完成需要真实操作或模型调用的活动任务。
-- 云端调用 Windows 的 wbipc。
-- 已解密 / 同步用户凭据、已部署到 GitHub、已创建云服务器进程。
+- upload-artifact v4：`ea165f8d65b6e75b540449e92b4886f43607fa02`
+- download-artifact v4：`d3f86a106a0bac45b974a628896c90dbdf5c8093`
+- setup-node v4：`49933ea5288caeca8642d1e84afbd3f7d6820020`
 
-成长任务平台头等细节在真实云端验证前仍有兼容性不确定性；本版不会遇到 400 就自动伪装不同客户端再写一次。首次验收需要以实际服务端状态为准。
+实现会检查刷新后令牌是否变化、实际到期时间是否延长。服务端是否支持滑动续期必须以真实运行结果判定，不能只从源码宣称无限有效。
