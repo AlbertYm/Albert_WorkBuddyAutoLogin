@@ -89,8 +89,25 @@ test('tasks never execute without successful artifact upload',async()=> {
   await assert.rejects(tasks({env,http:()=>{called=true;}}),/STATE_NOT_PERSISTED/);assert.equal(called,false);
 });
 test('latest includes checkpoint from a failed business run',()=> {
-  const artifact=(id,expired=false,branch='main')=>({id,name:vault.ARTIFACT,expired,workflow_run:{id:id+100,head_branch:branch},conclusion:'failure'});
+  const artifact=(id,expired=false,branch='main')=>({id,name:vault.ARTIFACT,expired,created_at:new Date(id*1000).toISOString(),workflow_run:{id:id+100,head_branch:branch},conclusion:'failure'});
   assert.equal(vault.latest([artifact(1),artifact(4,true),artifact(5,false,'feature'),artifact(3)]).id,3);
+});
+test('artifact IDs are not chronological; choose the actual newest creation time',()=> {
+  const artifact=(id,created_at,run)=>({id,name:vault.ARTIFACT,expired:false,created_at,workflow_run:{id:run,head_branch:'main'}});
+  assert.equal(vault.latest([
+    artifact(11536701396,'2026-10-08T08:07:29Z',37747729140),
+    artifact(11536183462,'2026-10-08T08:12:33Z',37748288928),
+  ]).id,11536183462);
+});
+test('checkpoint selection searches all pages rather than trusting API ID ordering',async()=> {
+  const name=vault.artifactName(seed,repo);let pages=0;
+  const result=await vault.select({...env,GITHUB_TOKEN:'mock'},async url=> {
+    pages++;assert.equal(new URL(url).searchParams.get('page'),String(pages));
+    const artifact=(id,time)=>({id,name,expired:false,created_at:time,workflow_run:{id:id+100,head_branch:'main'}});
+    const artifacts=pages===1 ? Array.from({length:100},(_,i)=>artifact(1000+i,'2026-10-08T08:00:00Z')):[artifact(1,'2026-10-08T08:10:00Z')];
+    return {status:200,json:async()=>({artifacts})};
+  });
+  assert.equal(pages,2);assert.equal(result.artifact_id,'1');assert.equal(result.run_id,'101');
 });
 test('artifact API errors abort instead of bootstrapping old seed',async()=> {
   await assert.rejects(vault.select({...env,GITHUB_TOKEN:'mock'},async()=>({status:403})),/ARTIFACT_LIST_REJECTED/);

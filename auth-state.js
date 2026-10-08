@@ -68,19 +68,26 @@ function artifactName(seed,repo) {
 function latest(artifacts,name=ARTIFACT) {
   if(!Array.isArray(artifacts)) throw new Failure('ARTIFACT_LIST_INVALID');
   return artifacts.filter(x=>x.name===name && x.expired===false && Number.isSafeInteger(x.id) &&
-    Number.isSafeInteger(x.workflow_run?.id) && x.workflow_run?.head_branch==='main')
-    .sort((a,b)=>b.id-a.id)[0] || null;
+    Number.isSafeInteger(x.workflow_run?.id) && x.workflow_run?.head_branch==='main' && Number.isFinite(Date.parse(x.created_at)))
+    .sort((a,b)=>Date.parse(b.created_at)-Date.parse(a.created_at) || b.workflow_run.id-a.workflow_run.id || b.id-a.id)[0] || null;
 }
 async function select(env=process.env,http=fetch) {
   if(!env.GITHUB_TOKEN || !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(env.GITHUB_REPOSITORY || '')) throw new Failure('GITHUB_STATE_ACCESS_MISSING');
   const name=artifactName(env.WB_REFRESH_TOKEN,env.GITHUB_REPOSITORY);
-  let response;
-  try {response=await http(`https://api.github.com/repos/${env.GITHUB_REPOSITORY}/actions/artifacts?name=${name}&per_page=100`, {
-    headers:{Authorization:`Bearer ${env.GITHUB_TOKEN}`,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},redirect:'error',signal:AbortSignal.timeout(25000),
-  });} catch {throw new Failure('ARTIFACT_LIST_NETWORK_FAILED');}
-  if(response.status!==200) throw new Failure('ARTIFACT_LIST_REJECTED',response.status);
-  let data;try{data=await response.json();}catch{throw new Failure('ARTIFACT_LIST_INVALID');}
-  const selected=latest(data.artifacts,name);
+  const artifacts=[];
+  for(let page=1;page<=100;page++) {
+    let response;
+    try {response=await http(`https://api.github.com/repos/${env.GITHUB_REPOSITORY}/actions/artifacts?name=${name}&per_page=100&page=${page}`, {
+      headers:{Authorization:`Bearer ${env.GITHUB_TOKEN}`,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'},redirect:'error',signal:AbortSignal.timeout(25000),
+    });} catch {throw new Failure('ARTIFACT_LIST_NETWORK_FAILED');}
+    if(response.status!==200) throw new Failure('ARTIFACT_LIST_REJECTED',response.status);
+    let data;try{data=await response.json();}catch{throw new Failure('ARTIFACT_LIST_INVALID');}
+    if(!Array.isArray(data.artifacts)) throw new Failure('ARTIFACT_LIST_INVALID');
+    artifacts.push(...data.artifacts);
+    if(data.artifacts.length<100) break;
+    if(page===100) throw new Failure('ARTIFACT_LIST_LIMIT');
+  }
+  const selected=latest(artifacts,name);
   return selected ? {found:'true',artifact_name:name,artifact_id:String(selected.id),run_id:String(selected.workflow_run.id)}:{found:'false',artifact_name:name};
 }
 module.exports={ARTIFACT,stateFile,encode,decode,save,load,restore,due,info,latest,select,artifactName};

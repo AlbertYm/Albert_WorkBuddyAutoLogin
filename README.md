@@ -21,7 +21,7 @@
 
 刷新后取得的 **新 AT / 新 RT** 保存到加密 Artifact。下一次从 Artifact 恢复最新凭据，原始 RT 不再用于请求 WorkBuddy，只用于解密。**原始 RT 的服务端有效期届满不会让加密密钥失效。** 因而不需要把新凭据写回 GitHub Secrets，不需要 `REPO_PAT`，不需要把桌面 GitHub 登录授权复制到云端。
 
-每次运行都会上传一个当前快照，保留 90 天，即使本次业务操作失败也保留已更新的凭据。状态选择依据最新 Artifact，而不是只选择绿色成功的运行，避免业务失败后退回已经轮转掉的旧 RT。
+每次运行都会上传一个当前快照，保留 90 天，即使本次业务操作失败也保留已更新的凭据。状态选择检查全部分页，按 Artifact 的实际创建时间选取最新状态，不假设编号随时间递增，也不只选择绿色成功的运行，避免退回已经轮转掉的旧 RT。
 
 Artifact 只含 `schema/repo/keyId/iv/tag/ciphertext`，没有明文 AT / RT。加密采用随机 12 字节 IV 和完整认证标签，篡改、错仓库、错种子均会失败。密钥和 token 不打印、不作为命令行参数、不保存到 Git 或明文文件。GitHub 自动提供的 `GITHUB_TOKEN` 只需要 `contents: read` 和 `actions: read`；上传使用 GitHub 官方 Artifact Action 的运行时授权。
 
@@ -59,7 +59,7 @@ python renew_export.py --repo YOUR_OWNER/YOUR_REPO
 
 ## 代码验证和回滚
 
-运行环境：GitHub `ubuntu-latest`、Node.js 20。代码与测试无第三方 Node 依赖，不使用外部模型 API。Windows 本机验证使用 Node.js 24；首次初始化工具另需 Python 3.10+、GitHub CLI 和已登录的 WorkBuddy 客户端。
+运行环境：GitHub `ubuntu-latest`、Node.js 24。代码与测试无第三方 Node 依赖，不使用外部模型 API。Windows 本机验证使用 Node.js 24；首次初始化工具另需 Python 3.10+、GitHub CLI 和已登录的 WorkBuddy 客户端。
 
 ```powershell
 node --test
