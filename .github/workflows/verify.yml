@@ -1,0 +1,27 @@
+name: Offline verification
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Mock tests only; no account requests
+        run: node --test
+      - name: Syntax checks
+        run: |
+          node --check main.js
+          node --check ipc.js
+          node --check cloud.js
+          python3 -m py_compile sync-auth.py vendor/signin.py

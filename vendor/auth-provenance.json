@@ -1,0 +1,6 @@
+{
+  "repository": "88lin/workbuddy-auto-signin",
+  "commit": "cb2bf1f02db8900922dc0f06090cdb7334d45ff5",
+  "sha256": "a5aa672b340a0c7a7d4ffd589471528e28198480d7d9838e30e0ea7da591ec44",
+  "usage": "Only local credential resolution; no vendor task functions called"
+}

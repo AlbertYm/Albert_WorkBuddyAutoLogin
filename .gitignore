@@ -1,0 +1,9 @@
+runtime/
+__pycache__/
+*.pyc
+*.info
+*token*.json
+*auth*.json
+!vendor/auth-provenance.json
+endpoint.json
+.env
